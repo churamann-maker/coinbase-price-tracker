@@ -1,0 +1,479 @@
+openapi: 3.0.3
+info:
+  title: Coinbase Price Tracker API
+  description: |
+    REST API for tracking cryptocurrency prices using Coinbase public APIs.
+    Supports real-time spot, buy, and sell prices with in-memory price history tracking.
+
+    ## Features
+    - Real-time cryptocurrency prices from Coinbase
+    - Support for spot, buy, and sell prices
+    - Price history tracking with in-memory cache
+    - Symbol tracking management
+
+    ## Rate Limits
+    Coinbase public API has a rate limit of 10 requests per second.
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+  license:
+    name: MIT License
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server (AWS Lambda)
+
+tags:
+  - name: Prices
+    description: Cryptocurrency price operations
+  - name: Tracking
+    description: Symbol tracking management
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /api/v1/price/{symbol}/spot:
+    get:
+      tags:
+        - Prices
+      summary: Get spot price
+      description: Retrieves the current spot price for a cryptocurrency pair from Coinbase
+      operationId: getSpotPrice
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol (e.g., BTC-USD, ETH-USD, or just BTC for USD pair)
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully retrieved spot price
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceResponse'
+              example:
+                symbol: BTC
+                currency: USD
+                spotPrice: 42150.50
+                timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: Symbol not found or not supported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/price/{symbol}/buy:
+    get:
+      tags:
+        - Prices
+      summary: Get buy price
+      description: Retrieves the current buy price (ask) for a cryptocurrency pair from Coinbase
+      operationId: getBuyPrice
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully retrieved buy price
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceResponse'
+              example:
+                symbol: BTC
+                currency: USD
+                buyPrice: 42200.00
+                timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: Symbol not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/price/{symbol}/sell:
+    get:
+      tags:
+        - Prices
+      summary: Get sell price
+      description: Retrieves the current sell price (bid) for a cryptocurrency pair from Coinbase
+      operationId: getSellPrice
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol
+          schema:
+            type: string
+          example: ETH-USD
+      responses:
+        '200':
+          description: Successfully retrieved sell price
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceResponse'
+              example:
+                symbol: ETH
+                currency: USD
+                sellPrice: 2250.00
+                timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: Symbol not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/price/{symbol}/all:
+    get:
+      tags:
+        - Prices
+      summary: Get all prices
+      description: Retrieves spot, buy, and sell prices for a cryptocurrency pair. Also records the price if tracking is enabled.
+      operationId: getAllPrices
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully retrieved all prices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceResponse'
+              example:
+                symbol: BTC
+                currency: USD
+                spotPrice: 42150.50
+                buyPrice: 42200.00
+                sellPrice: 42100.00
+                timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: Symbol not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/price/{symbol}/history:
+    get:
+      tags:
+        - Prices
+      summary: Get price history
+      description: Retrieves the cached price history for a symbol. Automatically starts tracking if not already tracked.
+      operationId: getPriceHistory
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully retrieved price history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceHistory'
+        '404':
+          description: Symbol not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/track/{symbol}:
+    post:
+      tags:
+        - Tracking
+      summary: Start tracking a symbol
+      description: Begins tracking price history for the specified cryptocurrency pair
+      operationId: startTracking
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol to track
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully started tracking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackingResponse'
+              example:
+                message: Started tracking BTC-USD
+                symbol: BTC-USD
+                timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: Symbol not found on Coinbase
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Tracking
+      summary: Stop tracking a symbol
+      description: Stops tracking and clears the price history for the specified symbol
+      operationId: stopTracking
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol to stop tracking
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully stopped tracking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackingResponse'
+              example:
+                message: Stopped tracking BTC-USD
+                symbol: BTC-USD
+                timestamp: '2024-01-15T10:30:00Z'
+
+  /api/v1/track:
+    get:
+      tags:
+        - Tracking
+      summary: List tracked symbols
+      description: Returns a list of all symbols currently being tracked
+      operationId: getTrackedSymbols
+      responses:
+        '200':
+          description: Successfully retrieved tracked symbols
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackingStatus'
+
+  /api/v1/health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns the health status of the API
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: UP
+                service: coinbase-price-tracker
+                timestamp: '2024-01-15T10:30:00Z'
+
+components:
+  schemas:
+    PriceResponse:
+      type: object
+      description: Price response containing cryptocurrency price information
+      properties:
+        symbol:
+          type: string
+          description: Cryptocurrency symbol
+          example: BTC
+        currency:
+          type: string
+          description: Quote currency
+          example: USD
+        spotPrice:
+          type: number
+          format: decimal
+          description: Current spot price
+          example: 42150.50
+        buyPrice:
+          type: number
+          format: decimal
+          description: Current buy price (ask)
+          example: 42200.00
+        sellPrice:
+          type: number
+          format: decimal
+          description: Current sell price (bid)
+          example: 42100.00
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the price data
+          example: '2024-01-15T10:30:00Z'
+
+    PriceHistory:
+      type: object
+      description: Historical price data for a cryptocurrency
+      properties:
+        symbol:
+          type: string
+          description: Cryptocurrency symbol
+          example: BTC
+        currency:
+          type: string
+          description: Quote currency
+          example: USD
+        history:
+          type: array
+          description: List of historical price points
+          items:
+            $ref: '#/components/schemas/PricePoint'
+        totalRecords:
+          type: integer
+          description: Total number of records in history
+          example: 25
+
+    PricePoint:
+      type: object
+      description: A single price point in the history
+      properties:
+        spotPrice:
+          type: number
+          format: decimal
+          description: Spot price at this point in time
+          example: 42150.50
+        buyPrice:
+          type: number
+          format: decimal
+          description: Buy price at this point in time
+          example: 42200.00
+        sellPrice:
+          type: number
+          format: decimal
+          description: Sell price at this point in time
+          example: 42100.00
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of this price point
+          example: '2024-01-15T10:30:00Z'
+
+    TrackingStatus:
+      type: object
+      description: Status of currently tracked cryptocurrency symbols
+      properties:
+        trackedSymbols:
+          type: array
+          description: Set of symbols currently being tracked
+          items:
+            type: string
+          example:
+            - BTC-USD
+            - ETH-USD
+        totalTracked:
+          type: integer
+          description: Total number of tracked symbols
+          example: 2
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the status
+          example: '2024-01-15T10:30:00Z'
+
+    TrackingResponse:
+      type: object
+      description: Response for tracking operations
+      properties:
+        message:
+          type: string
+          description: Operation result message
+          example: Started tracking BTC-USD
+        symbol:
+          type: string
+          description: The symbol that was affected
+          example: BTC-USD
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the operation
+          example: '2024-01-15T10:30:00Z'
+
+    HealthResponse:
+      type: object
+      description: Health check response
+      properties:
+        status:
+          type: string
+          description: Service status
+          example: UP
+        service:
+          type: string
+          description: Service name
+          example: coinbase-price-tracker
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the health check
+          example: '2024-01-15T10:30:00Z'
+
+    ErrorResponse:
+      type: object
+      description: Error response
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: Symbol not found or not supported by Coinbase
+        status:
+          type: integer
+          description: HTTP status code
+          example: 404
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the error
+          example: '2024-01-15T10:30:00Z'

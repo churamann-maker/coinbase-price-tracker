@@ -1,0 +1,75 @@
+spring:
+  application:
+    name: coinbase-price-tracker
+  main:
+    web-application-type: servlet
+
+server:
+  port: 8080
+
+# Coinbase API Configuration
+coinbase:
+  api:
+    base-url: https://api.coinbase.com/v2
+    timeout-seconds: 10
+
+# Cache Configuration
+cache:
+  price:
+    ttl-seconds: 30
+    max-size: 1000
+
+# Price Tracking Configuration
+tracker:
+  history:
+    max-records: 100
+
+# AWS Configuration
+aws:
+  region: ${AWS_REGION:us-east-1}
+  dynamodb:
+    endpoint: ""  # Leave empty for Lambda (uses default)
+    tables:
+      enrollment: ${AWS_DYNAMODB_TABLES_ENROLLMENT:symbol-enrollments}
+      price-history: ${AWS_DYNAMODB_TABLES_PRICE_HISTORY:price-history}
+
+# Twitter/X API Configuration
+twitter:
+  api:
+    bearer-token: ${TWITTER_BEARER_TOKEN:}
+    timeout-seconds: 10
+  search:
+    max-results: 100
+    include-retweets: false
+
+# Recommendation Configuration
+recommendation:
+  minimum-enrollment-days: 7
+  sentiment:
+    min-tweets-required: 10
+    positive-threshold: 0.5
+  trend:
+    moving-average-days: 7
+
+# Price History Persistence Configuration
+price-history:
+  retention-days: 30
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.tracker: DEBUG
+    org.springframework.web: INFO
+
+# OpenAPI / Swagger Configuration
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    url: /openapi.yaml
+    operationsSorter: method
+    tagsSorter: alpha
+    tryItOutEnabled: true

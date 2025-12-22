@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Coinbase Price Tracker API - Spring Boot Lambda
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: java17
+    Architectures:
+      - x86_64
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Deployment stage
+
+  TwitterBearerToken:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Twitter/X API Bearer Token for sentiment analysis
+
+Resources:
+  # DynamoDB Tables
+  EnrollmentTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub symbol-enrollments-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: symbol
+          AttributeType: S
+      KeySchema:
+        - AttributeName: symbol
+          KeyType: HASH
+      Tags:
+        - Key: Application
+          Value: coinbase-price-tracker
+        - Key: Stage
+          Value: !Ref Stage
+
+  PriceHistoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub price-history-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: symbol
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: symbol
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Application
+          Value: coinbase-price-tracker
+        - Key: Stage
+          Value: !Ref Stage
+
+  CoinbasePriceTrackerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub coinbase-price-tracker-${Stage}
+      Handler: com.tracker.StreamLambdaHandler::handleRequest
+      CodeUri: .
+      Description: Coinbase Price Tracker API
+      MemorySize: 1024
+      Timeout: 60
+      SnapStart:
+        ApplyOn: PublishedVersions
+      AutoPublishAlias: live
+      Environment:
+        Variables:
+          SPRING_PROFILES_ACTIVE: lambda
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+          AWS_DYNAMODB_TABLES_ENROLLMENT: !Ref EnrollmentTable
+          AWS_DYNAMODB_TABLES_PRICE_HISTORY: !Ref PriceHistoryTable
+          TWITTER_BEARER_TOKEN: !Ref TwitterBearerToken
+      Events:
+        ProxyApiRoot:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
+            ApiId: !Ref CoinbaseApi
+        ProxyApiGreedy:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+            ApiId: !Ref CoinbaseApi
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+                - dynamodb:DeleteItem
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:UpdateItem
+              Resource:
+                - !GetAtt EnrollmentTable.Arn
+                - !GetAtt PriceHistoryTable.Arn
+            - Effect: Allow
+              Action:
+                - comprehend:DetectSentiment
+                - comprehend:BatchDetectSentiment
+              Resource: "*"
+
+  CoinbaseApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+
+  ApplicationResourceGroup:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Name: !Sub ApplicationInsights-SAM-${AWS::StackName}
+      ResourceQuery:
+        Type: CLOUDFORMATION_STACK_1_0
+
+  ApplicationInsightsMonitoring:
+    Type: AWS::ApplicationInsights::Application
+    Properties:
+      ResourceGroupName: !Ref ApplicationResourceGroup
+      AutoConfigurationEnabled: true
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${CoinbaseApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+
+  FunctionArn:
+    Description: Lambda Function ARN
+    Value: !GetAtt CoinbasePriceTrackerFunction.Arn
+
+  FunctionName:
+    Description: Lambda Function Name
+    Value: !Ref CoinbasePriceTrackerFunction
+
+  EnrollmentTableName:
+    Description: DynamoDB table for symbol enrollments
+    Value: !Ref EnrollmentTable
+
+  EnrollmentTableArn:
+    Description: DynamoDB enrollment table ARN
+    Value: !GetAtt EnrollmentTable.Arn
+
+  PriceHistoryTableName:
+    Description: DynamoDB table for price history
+    Value: !Ref PriceHistoryTable
+
+  PriceHistoryTableArn:
+    Description: DynamoDB price history table ARN
+    Value: !GetAtt PriceHistoryTable.Arn

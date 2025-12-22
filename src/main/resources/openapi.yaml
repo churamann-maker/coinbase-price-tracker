@@ -1,0 +1,916 @@
+openapi: 3.0.3
+info:
+  title: Coinbase Price Tracker API
+  description: |
+    REST API for tracking cryptocurrency prices using Coinbase public APIs.
+    Supports real-time spot, buy, and sell prices with persistent price history tracking.
+
+    ## Features
+    - Real-time cryptocurrency prices from Coinbase
+    - Support for spot, buy, and sell prices
+    - Price history tracking with DynamoDB persistence
+    - Symbol tracking management
+    - **Symbol enrollment for recommendations**
+    - **BUY/SELL recommendations based on X (Twitter) sentiment analysis and price trends**
+
+    ## Recommendation System
+    1. Enroll a symbol using `POST /api/v1/enroll/{symbol}`
+    2. Wait minimum 7 days for sufficient data collection
+    3. Get recommendation using `GET /api/v1/recommendation/{symbol}`
+
+    Recommendations are based on:
+    - **Sentiment Analysis**: Tweets analyzed via AWS Comprehend
+    - **Price Trend**: 7-day moving average comparison
+
+    ## Rate Limits
+    Coinbase public API has a rate limit of 10 requests per second.
+  version: 2.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+  license:
+    name: MIT License
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server (AWS Lambda)
+
+tags:
+  - name: Prices
+    description: Cryptocurrency price operations
+  - name: Tracking
+    description: Symbol tracking management (in-memory)
+  - name: Enrollment
+    description: Symbol enrollment for recommendations (persistent)
+  - name: Recommendations
+    description: BUY/SELL recommendations based on sentiment and price trends
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /api/v1/price/{symbol}/spot:
+    get:
+      tags:
+        - Prices
+      summary: Get spot price
+      description: Retrieves the current spot price for a cryptocurrency pair from Coinbase
+      operationId: getSpotPrice
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol (e.g., BTC-USD, ETH-USD, or just BTC for USD pair)
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully retrieved spot price
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceResponse'
+              example:
+                symbol: BTC
+                currency: USD
+                spotPrice: 42150.50
+                timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: Symbol not found or not supported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/price/{symbol}/buy:
+    get:
+      tags:
+        - Prices
+      summary: Get buy price
+      description: Retrieves the current buy price (ask) for a cryptocurrency pair from Coinbase
+      operationId: getBuyPrice
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully retrieved buy price
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceResponse'
+              example:
+                symbol: BTC
+                currency: USD
+                buyPrice: 42200.00
+                timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: Symbol not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/price/{symbol}/sell:
+    get:
+      tags:
+        - Prices
+      summary: Get sell price
+      description: Retrieves the current sell price (bid) for a cryptocurrency pair from Coinbase
+      operationId: getSellPrice
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol
+          schema:
+            type: string
+          example: ETH-USD
+      responses:
+        '200':
+          description: Successfully retrieved sell price
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceResponse'
+              example:
+                symbol: ETH
+                currency: USD
+                sellPrice: 2250.00
+                timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: Symbol not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/price/{symbol}/all:
+    get:
+      tags:
+        - Prices
+      summary: Get all prices
+      description: Retrieves spot, buy, and sell prices for a cryptocurrency pair. Also records the price if tracking is enabled.
+      operationId: getAllPrices
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully retrieved all prices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceResponse'
+              example:
+                symbol: BTC
+                currency: USD
+                spotPrice: 42150.50
+                buyPrice: 42200.00
+                sellPrice: 42100.00
+                timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: Symbol not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/price/{symbol}/history:
+    get:
+      tags:
+        - Prices
+      summary: Get price history
+      description: Retrieves the cached price history for a symbol. Automatically starts tracking if not already tracked.
+      operationId: getPriceHistory
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully retrieved price history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PriceHistory'
+        '404':
+          description: Symbol not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/track/{symbol}:
+    post:
+      tags:
+        - Tracking
+      summary: Start tracking a symbol
+      description: Begins tracking price history for the specified cryptocurrency pair
+      operationId: startTracking
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol to track
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully started tracking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackingResponse'
+              example:
+                message: Started tracking BTC-USD
+                symbol: BTC-USD
+                timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: Symbol not found on Coinbase
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Tracking
+      summary: Stop tracking a symbol
+      description: Stops tracking and clears the price history for the specified symbol
+      operationId: stopTracking
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol to stop tracking
+          schema:
+            type: string
+          example: BTC-USD
+      responses:
+        '200':
+          description: Successfully stopped tracking
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackingResponse'
+              example:
+                message: Stopped tracking BTC-USD
+                symbol: BTC-USD
+                timestamp: '2024-01-15T10:30:00Z'
+
+  /api/v1/track:
+    get:
+      tags:
+        - Tracking
+      summary: List tracked symbols
+      description: Returns a list of all symbols currently being tracked
+      operationId: getTrackedSymbols
+      responses:
+        '200':
+          description: Successfully retrieved tracked symbols
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackingStatus'
+
+  /api/v1/health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns the health status of the API
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: UP
+                service: coinbase-price-tracker
+                timestamp: '2024-01-15T10:30:00Z'
+
+  /api/v1/enroll/{symbol}:
+    post:
+      tags:
+        - Enrollment
+      summary: Enroll symbol for recommendations
+      description: |
+        Enrolls a cryptocurrency symbol for recommendation tracking.
+        The enrollment timestamp is persisted in DynamoDB.
+        After 7 days, recommendations become available.
+      operationId: enrollSymbol
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol (e.g., BTC-USD, ETH-USD, or just BTC for USD pair)
+          schema:
+            type: string
+          example: BTC
+      responses:
+        '201':
+          description: Successfully enrolled symbol
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentResponse'
+              example:
+                symbol: BTC
+                currency: USD
+                enrolledAt: '2024-01-15T10:30:00Z'
+                status: ACTIVE
+                recommendationAvailable: false
+                recommendationAvailableAt: '2024-01-22T10:30:00Z'
+                daysUntilRecommendation: 7
+        '400':
+          description: Invalid symbol format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    get:
+      tags:
+        - Enrollment
+      summary: Get enrollment status
+      description: Returns the enrollment status for a symbol including recommendation availability
+      operationId: getEnrollmentStatus
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol
+          schema:
+            type: string
+          example: BTC
+      responses:
+        '200':
+          description: Successfully retrieved enrollment status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentResponse'
+              example:
+                symbol: BTC
+                currency: USD
+                enrolledAt: '2024-01-15T10:30:00Z'
+                status: ACTIVE
+                recommendationAvailable: true
+                recommendationAvailableAt: '2024-01-22T10:30:00Z'
+                daysUntilRecommendation: 0
+        '404':
+          description: Symbol not enrolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SymbolNotEnrolledError'
+
+    delete:
+      tags:
+        - Enrollment
+      summary: Unenroll symbol
+      description: Removes a symbol from recommendation tracking
+      operationId: unenrollSymbol
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol to unenroll
+          schema:
+            type: string
+          example: BTC
+      responses:
+        '200':
+          description: Successfully unenrolled symbol
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackingResponse'
+              example:
+                message: Successfully unenrolled BTC
+                symbol: BTC
+                timestamp: '2024-01-15T10:30:00Z'
+        '404':
+          description: Symbol not enrolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SymbolNotEnrolledError'
+
+  /api/v1/enroll:
+    get:
+      tags:
+        - Enrollment
+      summary: List all enrollments
+      description: Returns a list of all enrolled symbols with their status
+      operationId: listEnrollments
+      responses:
+        '200':
+          description: Successfully retrieved enrollments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EnrollmentResponse'
+              example:
+                - symbol: BTC
+                  currency: USD
+                  enrolledAt: '2024-01-15T10:30:00Z'
+                  status: ACTIVE
+                  recommendationAvailable: true
+                  recommendationAvailableAt: '2024-01-22T10:30:00Z'
+                  daysUntilRecommendation: 0
+                - symbol: ETH
+                  currency: USD
+                  enrolledAt: '2024-01-18T14:00:00Z'
+                  status: ACTIVE
+                  recommendationAvailable: false
+                  recommendationAvailableAt: '2024-01-25T14:00:00Z'
+                  daysUntilRecommendation: 3
+
+  /api/v1/recommendation/{symbol}:
+    get:
+      tags:
+        - Recommendations
+      summary: Get BUY/SELL recommendation
+      description: |
+        Returns a BUY, SELL, or HOLD recommendation for an enrolled symbol.
+
+        **Requirements:**
+        - Symbol must be enrolled
+        - At least 7 days must have passed since enrollment
+
+        **Recommendation Logic:**
+        - **BUY**: Positive sentiment AND price trending upwards (above 7-day moving average)
+        - **SELL**: Sentiment is NOT positive
+        - **HOLD**: Mixed signals (positive sentiment but price below moving average)
+
+        **Data Sources:**
+        - Sentiment: X (Twitter) tweets analyzed via AWS Comprehend
+        - Price Trend: 7-day moving average of sell prices
+      operationId: getRecommendation
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          description: Trading pair symbol
+          schema:
+            type: string
+          example: BTC
+      responses:
+        '200':
+          description: Successfully retrieved recommendation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+              examples:
+                buy:
+                  summary: BUY recommendation
+                  value:
+                    symbol: BTC
+                    currency: USD
+                    recommendation: BUY
+                    reasoning: "Positive market sentiment detected (72% positive from 87 tweets) with upward price trend (2.73% above 7-day moving average)."
+                    sentiment:
+                      overallSentiment: POSITIVE
+                      positiveScore: 0.72
+                      negativeScore: 0.15
+                      neutralScore: 0.13
+                      tweetsAnalyzed: 87
+                    trend:
+                      currentPrice: 43250.50
+                      sevenDayMovingAverage: 42100.25
+                      trendingUpwards: true
+                      percentAboveAverage: 2.73
+                    timestamp: '2024-01-22T14:30:00Z'
+                sell:
+                  summary: SELL recommendation
+                  value:
+                    symbol: ETH
+                    currency: USD
+                    recommendation: SELL
+                    reasoning: "Market sentiment is not positive (negative sentiment with 45% negative from 92 tweets). Consider selling or avoiding new positions."
+                    sentiment:
+                      overallSentiment: NEGATIVE
+                      positiveScore: 0.25
+                      negativeScore: 0.45
+                      neutralScore: 0.30
+                      tweetsAnalyzed: 92
+                    trend:
+                      currentPrice: 2150.00
+                      sevenDayMovingAverage: 2200.50
+                      trendingUpwards: false
+                      percentAboveAverage: -2.29
+                    timestamp: '2024-01-22T14:30:00Z'
+        '400':
+          description: Recommendation not yet available (less than 7 days since enrollment)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationNotAvailableError'
+              example:
+                error: Recommendation not yet available
+                symbol: BTC
+                availableAt: '2024-01-25T10:30:00Z'
+                daysRemaining: 3
+                status: 400
+                timestamp: '2024-01-22T14:30:00Z'
+        '404':
+          description: Symbol not enrolled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SymbolNotEnrolledError'
+
+components:
+  schemas:
+    PriceResponse:
+      type: object
+      description: Price response containing cryptocurrency price information
+      properties:
+        symbol:
+          type: string
+          description: Cryptocurrency symbol
+          example: BTC
+        currency:
+          type: string
+          description: Quote currency
+          example: USD
+        spotPrice:
+          type: number
+          format: decimal
+          description: Current spot price
+          example: 42150.50
+        buyPrice:
+          type: number
+          format: decimal
+          description: Current buy price (ask)
+          example: 42200.00
+        sellPrice:
+          type: number
+          format: decimal
+          description: Current sell price (bid)
+          example: 42100.00
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the price data
+          example: '2024-01-15T10:30:00Z'
+
+    PriceHistory:
+      type: object
+      description: Historical price data for a cryptocurrency
+      properties:
+        symbol:
+          type: string
+          description: Cryptocurrency symbol
+          example: BTC
+        currency:
+          type: string
+          description: Quote currency
+          example: USD
+        history:
+          type: array
+          description: List of historical price points
+          items:
+            $ref: '#/components/schemas/PricePoint'
+        totalRecords:
+          type: integer
+          description: Total number of records in history
+          example: 25
+
+    PricePoint:
+      type: object
+      description: A single price point in the history
+      properties:
+        spotPrice:
+          type: number
+          format: decimal
+          description: Spot price at this point in time
+          example: 42150.50
+        buyPrice:
+          type: number
+          format: decimal
+          description: Buy price at this point in time
+          example: 42200.00
+        sellPrice:
+          type: number
+          format: decimal
+          description: Sell price at this point in time
+          example: 42100.00
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of this price point
+          example: '2024-01-15T10:30:00Z'
+
+    TrackingStatus:
+      type: object
+      description: Status of currently tracked cryptocurrency symbols
+      properties:
+        trackedSymbols:
+          type: array
+          description: Set of symbols currently being tracked
+          items:
+            type: string
+          example:
+            - BTC-USD
+            - ETH-USD
+        totalTracked:
+          type: integer
+          description: Total number of tracked symbols
+          example: 2
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the status
+          example: '2024-01-15T10:30:00Z'
+
+    TrackingResponse:
+      type: object
+      description: Response for tracking operations
+      properties:
+        message:
+          type: string
+          description: Operation result message
+          example: Started tracking BTC-USD
+        symbol:
+          type: string
+          description: The symbol that was affected
+          example: BTC-USD
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the operation
+          example: '2024-01-15T10:30:00Z'
+
+    HealthResponse:
+      type: object
+      description: Health check response
+      properties:
+        status:
+          type: string
+          description: Service status
+          example: UP
+        service:
+          type: string
+          description: Service name
+          example: coinbase-price-tracker
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the health check
+          example: '2024-01-15T10:30:00Z'
+
+    ErrorResponse:
+      type: object
+      description: Error response
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: Symbol not found or not supported by Coinbase
+        status:
+          type: integer
+          description: HTTP status code
+          example: 404
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the error
+          example: '2024-01-15T10:30:00Z'
+
+    EnrollmentResponse:
+      type: object
+      description: Enrollment status for a cryptocurrency symbol
+      properties:
+        symbol:
+          type: string
+          description: Cryptocurrency symbol
+          example: BTC
+        currency:
+          type: string
+          description: Quote currency
+          example: USD
+        enrolledAt:
+          type: string
+          format: date-time
+          description: Timestamp when the symbol was enrolled
+          example: '2024-01-15T10:30:00Z'
+        status:
+          type: string
+          description: Enrollment status
+          enum:
+            - ACTIVE
+            - INACTIVE
+          example: ACTIVE
+        recommendationAvailable:
+          type: boolean
+          description: Whether recommendations are available (7+ days since enrollment)
+          example: false
+        recommendationAvailableAt:
+          type: string
+          format: date-time
+          description: Date when recommendations will become available
+          example: '2024-01-22T10:30:00Z'
+        daysUntilRecommendation:
+          type: integer
+          description: Days remaining until recommendations are available
+          example: 7
+
+    RecommendationResponse:
+      type: object
+      description: BUY/SELL/HOLD recommendation based on sentiment and price trends
+      properties:
+        symbol:
+          type: string
+          description: Cryptocurrency symbol
+          example: BTC
+        currency:
+          type: string
+          description: Quote currency
+          example: USD
+        recommendation:
+          type: string
+          description: The recommendation action
+          enum:
+            - BUY
+            - SELL
+            - HOLD
+          example: BUY
+        reasoning:
+          type: string
+          description: Explanation for the recommendation
+          example: "Positive market sentiment detected (72% positive from 87 tweets) with upward price trend (2.73% above 7-day moving average)."
+        sentiment:
+          $ref: '#/components/schemas/SentimentData'
+        trend:
+          $ref: '#/components/schemas/TrendData'
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the recommendation
+          example: '2024-01-22T14:30:00Z'
+
+    SentimentData:
+      type: object
+      description: Sentiment analysis data from X (Twitter) tweets
+      properties:
+        overallSentiment:
+          type: string
+          description: Overall sentiment classification
+          enum:
+            - POSITIVE
+            - NEGATIVE
+            - NEUTRAL
+            - MIXED
+            - UNKNOWN
+          example: POSITIVE
+        positiveScore:
+          type: number
+          format: double
+          description: Positive sentiment score (0.0 to 1.0)
+          example: 0.72
+        negativeScore:
+          type: number
+          format: double
+          description: Negative sentiment score (0.0 to 1.0)
+          example: 0.15
+        neutralScore:
+          type: number
+          format: double
+          description: Neutral sentiment score (0.0 to 1.0)
+          example: 0.13
+        tweetsAnalyzed:
+          type: integer
+          description: Number of tweets analyzed for sentiment
+          example: 87
+
+    TrendData:
+      type: object
+      description: Price trend analysis data
+      properties:
+        currentPrice:
+          type: number
+          format: decimal
+          description: Current sell price
+          example: 43250.50
+        sevenDayMovingAverage:
+          type: number
+          format: decimal
+          description: 7-day moving average of sell prices
+          example: 42100.25
+        trendingUpwards:
+          type: boolean
+          description: Whether current price is above the moving average
+          example: true
+        percentAboveAverage:
+          type: number
+          format: double
+          description: Percentage difference from moving average (negative if below)
+          example: 2.73
+
+    SymbolNotEnrolledError:
+      type: object
+      description: Error when symbol is not enrolled
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Symbol BTC is not enrolled. Please enroll first using POST /api/v1/enroll/BTC"
+        symbol:
+          type: string
+          description: The symbol that was not found
+          example: BTC
+        action:
+          type: string
+          description: Suggested action to resolve the error
+          example: "Enroll using POST /api/v1/enroll/BTC"
+        status:
+          type: integer
+          description: HTTP status code
+          example: 404
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the error
+          example: '2024-01-15T10:30:00Z'
+
+    RecommendationNotAvailableError:
+      type: object
+      description: Error when recommendation is not yet available
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Recommendation not yet available"
+        symbol:
+          type: string
+          description: The symbol
+          example: BTC
+        availableAt:
+          type: string
+          format: date-time
+          description: Date when recommendation will be available
+          example: '2024-01-22T10:30:00Z'
+        daysRemaining:
+          type: integer
+          description: Days remaining until recommendation is available
+          example: 3
+        status:
+          type: integer
+          description: HTTP status code
+          example: 400
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp of the error
+          example: '2024-01-15T10:30:00Z'
