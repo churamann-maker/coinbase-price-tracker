@@ -2,10 +2,10 @@ spring:
   application:
     name: coinbase-price-tracker
   main:
-    web-application-type: servlet
-
-server:
-  port: 8080
+    web-application-type: none
+  cloud:
+    function:
+      definition: apiHandler
 
 # Coinbase API Configuration
 coinbase:
@@ -32,6 +32,17 @@ aws:
     tables:
       enrollment: ${AWS_DYNAMODB_TABLES_ENROLLMENT:symbol-enrollments}
       price-history: ${AWS_DYNAMODB_TABLES_PRICE_HISTORY:price-history}
+  s3:
+    subscribers-bucket: ${AWS_S3_SUBSCRIBERS_BUCKET:crypto-subscribers-dev}
+
+# Vonage SMS Configuration
+vonage:
+  api:
+    key: ${VONAGE_API_KEY:}
+    secret: ${VONAGE_API_SECRET:}
+    url: https://rest.nexmo.com/sms/json
+  from:
+    number: ${VONAGE_FROM_NUMBER:CryptoTracker}
 
 # Twitter/X API Configuration
 twitter:
@@ -62,14 +73,3 @@ logging:
     com.tracker: DEBUG
     org.springframework.web: INFO
 
-# OpenAPI / Swagger Configuration
-springdoc:
-  api-docs:
-    enabled: false
-  swagger-ui:
-    path: /swagger-ui.html
-    enabled: true
-    url: /openapi.yaml
-    operationsSorter: method
-    tagsSorter: alpha
-    tryItOutEnabled: true

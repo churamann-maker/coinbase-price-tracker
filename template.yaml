@@ -26,7 +26,39 @@ Parameters:
     NoEcho: true
     Description: Twitter/X API Bearer Token for sentiment analysis
 
+  VonageApiKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Vonage API Key for SMS notifications
+
+  VonageApiSecret:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Vonage API Secret for SMS notifications
+
+  VonageFromNumber:
+    Type: String
+    Default: "CryptoTracker"
+    Description: Vonage sender ID or phone number
+
 Resources:
+  # S3 Bucket for Subscribers
+  SubscribersBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "crypto-subscribers-${Stage}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Application
+          Value: coinbase-price-tracker
+        - Key: Stage
+          Value: !Ref Stage
   # DynamoDB Tables
   EnrollmentTable:
     Type: AWS::DynamoDB::Table
@@ -73,34 +105,36 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub coinbase-price-tracker-${Stage}
-      Handler: com.tracker.StreamLambdaHandler::handleRequest
+      Handler: org.springframework.cloud.function.adapter.aws.FunctionInvoker::handleRequest
       CodeUri: .
       Description: Coinbase Price Tracker API
       MemorySize: 1024
       Timeout: 60
-      SnapStart:
-        ApplyOn: PublishedVersions
-      AutoPublishAlias: live
       Environment:
         Variables:
-          SPRING_PROFILES_ACTIVE: lambda
+          MAIN_CLASS: com.tracker.Application
+          SPRING_CLOUD_FUNCTION_DEFINITION: apiHandler
           JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
           AWS_DYNAMODB_TABLES_ENROLLMENT: !Ref EnrollmentTable
           AWS_DYNAMODB_TABLES_PRICE_HISTORY: !Ref PriceHistoryTable
           TWITTER_BEARER_TOKEN: !Ref TwitterBearerToken
+          AWS_S3_SUBSCRIBERS_BUCKET: !Ref SubscribersBucket
+          VONAGE_API_KEY: !Ref VonageApiKey
+          VONAGE_API_SECRET: !Ref VonageApiSecret
+          VONAGE_FROM_NUMBER: !Ref VonageFromNumber
       Events:
         ProxyApiRoot:
-          Type: HttpApi
+          Type: Api
           Properties:
             Path: /
             Method: ANY
-            ApiId: !Ref CoinbaseApi
+            RestApiId: !Ref CoinbaseApi
         ProxyApiGreedy:
-          Type: HttpApi
+          Type: Api
           Properties:
             Path: /{proxy+}
             Method: ANY
-            ApiId: !Ref CoinbaseApi
+            RestApiId: !Ref CoinbaseApi
       Policies:
         - AWSLambdaBasicExecutionRole
         - Version: '2012-10-17'
@@ -121,22 +155,60 @@ Resources:
                 - comprehend:DetectSentiment
                 - comprehend:BatchDetectSentiment
               Resource: "*"
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+                - s3:ListBucket
+              Resource:
+                - !GetAtt SubscribersBucket.Arn
+                - !Sub "${SubscribersBucket.Arn}/*"
 
   CoinbaseApi:
-    Type: AWS::Serverless::HttpApi
+    Type: AWS::Serverless::Api
     Properties:
       StageName: !Ref Stage
-      CorsConfiguration:
-        AllowOrigins:
-          - "*"
-        AllowMethods:
-          - GET
-          - POST
-          - DELETE
-          - OPTIONS
-        AllowHeaders:
-          - Content-Type
-          - Authorization
+      Cors:
+        AllowOrigin: "'*'"
+        AllowMethods: "'GET,POST,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+
+  # Notification Lambda - Scheduled daily to send price SMS
+  NotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub crypto-notification-${Stage}
+      Handler: com.tracker.NotificationHandler::handleRequest
+      CodeUri: .
+      Description: Sends daily crypto price SMS notifications
+      MemorySize: 1024
+      Timeout: 120
+      Environment:
+        Variables:
+          SPRING_PROFILES_ACTIVE: lambda
+          JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
+          AWS_S3_SUBSCRIBERS_BUCKET: !Ref SubscribersBucket
+          VONAGE_API_KEY: !Ref VonageApiKey
+          VONAGE_API_SECRET: !Ref VonageApiSecret
+          VONAGE_FROM_NUMBER: !Ref VonageFromNumber
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 day)
+            Description: Trigger daily price notifications
+            Enabled: true
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - !GetAtt SubscribersBucket.Arn
+                - !Sub "${SubscribersBucket.Arn}/*"
 
   ApplicationResourceGroup:
     Type: AWS::ResourceGroups::Group
@@ -154,7 +226,7 @@ Resources:
 Outputs:
   ApiUrl:
     Description: API Gateway endpoint URL
-    Value: !Sub "https://${CoinbaseApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+    Value: !Sub "https://${CoinbaseApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/"
 
   FunctionArn:
     Description: Lambda Function ARN
@@ -179,3 +251,19 @@ Outputs:
   PriceHistoryTableArn:
     Description: DynamoDB price history table ARN
     Value: !GetAtt PriceHistoryTable.Arn
+
+  SubscribersBucketName:
+    Description: S3 bucket for phone number subscribers
+    Value: !Ref SubscribersBucket
+
+  SubscribersBucketArn:
+    Description: S3 subscribers bucket ARN
+    Value: !GetAtt SubscribersBucket.Arn
+
+  NotificationFunctionArn:
+    Description: Notification Lambda Function ARN
+    Value: !GetAtt NotificationFunction.Arn
+
+  NotificationFunctionName:
+    Description: Notification Lambda Function Name
+    Value: !Ref NotificationFunction
