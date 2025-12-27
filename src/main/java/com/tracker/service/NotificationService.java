@@ -20,7 +20,7 @@ import java.util.Locale;
 public class NotificationService {
 
     private static final List<String> SYMBOLS = Arrays.asList(
-            "BTC", "ETH", "SOL", "ADA", "BLACK", "PIPPIN", "DOT"
+            "BTC", "ETH", "SOL", "ADA", "BNB", "XRP", "LINK", "ALGO"
     );
 
     private final SubscriptionService subscriptionService;
