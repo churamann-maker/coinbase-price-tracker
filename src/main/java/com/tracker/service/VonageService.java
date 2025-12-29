@@ -26,7 +26,8 @@ public class VonageService {
                     "api_secret", vonageConfig.getApiSecret(),
                     "from", vonageConfig.getFromNumber(),
                     "to", toPhoneNumber.replace("+", ""),
-                    "text", message
+                    "text", message,
+                    "type", "unicode"
             );
 
             String response = webClient.post()

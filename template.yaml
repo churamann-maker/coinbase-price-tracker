@@ -43,6 +43,11 @@ Parameters:
     Default: "CryptoTracker"
     Description: Vonage sender ID or phone number
 
+  AnalysisLambdaFunctionName:
+    Type: String
+    Default: "crypto-analysis-dev"
+    Description: Name of the crypto analysis Lambda function
+
 Resources:
   # S3 Bucket for Subscribers
   SubscribersBucket:
@@ -191,6 +196,7 @@ Resources:
           VONAGE_API_KEY: !Ref VonageApiKey
           VONAGE_API_SECRET: !Ref VonageApiSecret
           VONAGE_FROM_NUMBER: !Ref VonageFromNumber
+          ANALYSIS_LAMBDA_FUNCTION_NAME: !Ref AnalysisLambdaFunctionName
       Events:
         DailySchedule:
           Type: Schedule
@@ -209,6 +215,11 @@ Resources:
               Resource:
                 - !GetAtt SubscribersBucket.Arn
                 - !Sub "${SubscribersBucket.Arn}/*"
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource:
+                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AnalysisLambdaFunctionName}"
 
   ApplicationResourceGroup:
     Type: AWS::ResourceGroups::Group

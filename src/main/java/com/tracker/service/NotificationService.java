@@ -1,5 +1,6 @@
 package com.tracker.service;
 
+import com.tracker.model.AnalysisResponse;
 import com.tracker.model.PriceResponse;
 import com.tracker.model.Subscriber;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ public class NotificationService {
     private final SubscriptionService subscriptionService;
     private final CoinbaseService coinbaseService;
     private final VonageService vonageService;
+    private final AnalysisClient analysisClient;
 
     public void sendPriceNotifications() {
         log.info("Starting price notification job");
@@ -39,13 +41,19 @@ public class NotificationService {
 
         log.info("Found {} subscribers to notify", subscribers.size());
 
+        // Get market analysis for BTC
+        log.info("Fetching market analysis...");
+        AnalysisResponse analysis = analysisClient.getMarketAnalysis();
+        String sentimentEmoji = analysis.getEmoji();
+        log.info("Market sentiment: {} {}", analysis.getSentiment(), sentimentEmoji);
+
         String priceDigest = buildPriceDigest();
 
         int successCount = 0;
         int failCount = 0;
 
         for (Subscriber subscriber : subscribers) {
-            String personalizedMessage = buildPersonalizedMessage(subscriber, priceDigest);
+            String personalizedMessage = buildPersonalizedMessage(subscriber, priceDigest, sentimentEmoji);
             boolean sent = vonageService.sendSms(subscriber.getPhoneNumber(), personalizedMessage);
             if (sent) {
                 successCount++;
@@ -57,7 +65,7 @@ public class NotificationService {
         log.info("Notification job completed. Success: {}, Failed: {}", successCount, failCount);
     }
 
-    private String buildPersonalizedMessage(Subscriber subscriber, String priceDigest) {
+    private String buildPersonalizedMessage(Subscriber subscriber, String priceDigest, String sentimentEmoji) {
         String name = subscriber.getName() != null ? subscriber.getName() : "Subscriber";
         long daysSinceSubscribing = calculateDaysSinceSubscribing(subscriber.getSubscribedAt());
 
@@ -67,6 +75,8 @@ public class NotificationService {
         message.append(String.format("Day %d of greatness! ", daysSinceSubscribing));
         message.append("Magic is in the work. Here is your SunCoin Digest:\n\n");
         message.append(priceDigest);
+        message.append("\n\n");
+        message.append(sentimentEmoji);
 
         return message.toString();
     }

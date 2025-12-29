@@ -35,6 +35,11 @@ aws:
   s3:
     subscribers-bucket: ${AWS_S3_SUBSCRIBERS_BUCKET:crypto-subscribers-dev}
 
+# Market Analysis Service Configuration
+analysis:
+  lambda:
+    function-name: ${ANALYSIS_LAMBDA_FUNCTION_NAME:crypto-analysis-dev}
+
 # Vonage SMS Configuration
 vonage:
   api:
