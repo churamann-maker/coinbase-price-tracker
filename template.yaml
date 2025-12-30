@@ -201,8 +201,8 @@ Resources:
         DailySchedule:
           Type: Schedule
           Properties:
-            Schedule: rate(1 day)
-            Description: Trigger daily price notifications
+            Schedule: cron(0 11 * * ? *)
+            Description: Trigger daily price notifications at 6 AM EST
             Enabled: true
       Policies:
         - AWSLambdaBasicExecutionRole
