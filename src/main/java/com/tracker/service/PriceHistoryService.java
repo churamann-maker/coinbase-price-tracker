@@ -17,6 +17,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -154,15 +156,52 @@ public class PriceHistoryService {
     }
 
     /**
+     * Check if a record already exists for today
+     */
+    private boolean hasRecordForToday(String symbol) {
+        List<PriceRecord> todayRecords = getPriceHistory(symbol, 1);
+        if (todayRecords.isEmpty()) {
+            return false;
+        }
+
+        LocalDate today = LocalDate.now(ZoneId.of("America/New_York"));
+        return todayRecords.stream()
+                .anyMatch(record -> {
+                    LocalDate recordDate = record.getTimestamp()
+                            .atZone(ZoneId.of("America/New_York"))
+                            .toLocalDate();
+                    return recordDate.equals(today);
+                });
+    }
+
+    /**
      * Record price and calculate change data for notifications
      */
     public PriceChangeData recordPriceWithChange(String symbol, PriceResponse prices) {
         String normalizedSymbol = normalizeSymbol(symbol);
         Instant now = Instant.now();
 
-        // Get previous record for daily change calculation
-        PriceRecord previousRecord = getLatestRecord(normalizedSymbol);
+        // Check if we already have a record for today
+        boolean alreadyRecordedToday = hasRecordForToday(normalizedSymbol);
+
+        // Get previous record for daily change calculation (yesterday's record)
+        List<PriceRecord> history = getPriceHistory(normalizedSymbol, movingAverageDays);
+        PriceRecord previousRecord = null;
         BigDecimal dailyChangePercent = null;
+
+        if (!history.isEmpty()) {
+            // Find the most recent record from a previous day
+            LocalDate today = LocalDate.now(ZoneId.of("America/New_York"));
+            previousRecord = history.stream()
+                    .filter(record -> {
+                        LocalDate recordDate = record.getTimestamp()
+                                .atZone(ZoneId.of("America/New_York"))
+                                .toLocalDate();
+                        return recordDate.isBefore(today);
+                    })
+                    .reduce((first, second) -> second) // Get the last (most recent) one
+                    .orElse(null);
+        }
 
         if (previousRecord != null && previousRecord.getSpotPrice() != null && prices.getSpotPrice() != null) {
             BigDecimal previousPrice = previousRecord.getSpotPrice();
@@ -176,23 +215,26 @@ public class PriceHistoryService {
             }
         }
 
-        // Save new record with daily change
-        PriceRecord record = PriceRecord.builder()
-                .symbol(normalizedSymbol)
-                .timestamp(now)
-                .spotPrice(prices.getSpotPrice())
-                .buyPrice(prices.getBuyPrice())
-                .sellPrice(prices.getSellPrice())
-                .dailyChangePercent(dailyChangePercent)
-                .ttl(now.plus(Duration.ofDays(retentionDays)).getEpochSecond())
-                .build();
+        // Only save if we don't have a record for today yet
+        if (!alreadyRecordedToday) {
+            PriceRecord record = PriceRecord.builder()
+                    .symbol(normalizedSymbol)
+                    .timestamp(now)
+                    .spotPrice(prices.getSpotPrice())
+                    .buyPrice(prices.getBuyPrice())
+                    .sellPrice(prices.getSellPrice())
+                    .dailyChangePercent(dailyChangePercent)
+                    .ttl(now.plus(Duration.ofDays(retentionDays)).getEpochSecond())
+                    .build();
 
-        priceRecordTable.putItem(record);
-        log.debug("Recorded price for {}: spot={}, dailyChange={}%",
-                normalizedSymbol, prices.getSpotPrice(), dailyChangePercent);
+            priceRecordTable.putItem(record);
+            log.debug("Recorded price for {}: spot={}, dailyChange={}%",
+                    normalizedSymbol, prices.getSpotPrice(), dailyChangePercent);
+        } else {
+            log.debug("Skipping price record for {} - already recorded today", normalizedSymbol);
+        }
 
         // Calculate average daily change from historical records
-        List<PriceRecord> history = getPriceHistory(normalizedSymbol, movingAverageDays);
         BigDecimal avgChangePercent = null;
         int daysOfData = 0;
 
