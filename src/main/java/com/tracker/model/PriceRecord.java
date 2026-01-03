@@ -24,6 +24,7 @@ public class PriceRecord {
     private BigDecimal spotPrice;
     private BigDecimal buyPrice;
     private BigDecimal sellPrice;
+    private BigDecimal dailyChangePercent;
     private Long ttl;
 
     @DynamoDbPartitionKey

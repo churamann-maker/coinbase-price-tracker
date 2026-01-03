@@ -1,6 +1,7 @@
 package com.tracker.service;
 
 import com.tracker.model.AnalysisResponse;
+import com.tracker.model.PriceChangeData;
 import com.tracker.model.PriceResponse;
 import com.tracker.model.Subscriber;
 import lombok.RequiredArgsConstructor;
@@ -28,6 +29,7 @@ public class NotificationService {
     private final CoinbaseService coinbaseService;
     private final VonageService vonageService;
     private final AnalysisClient analysisClient;
+    private final PriceHistoryService priceHistoryService;
 
     public void sendPriceNotifications() {
         log.info("Starting price notification job");
@@ -99,8 +101,20 @@ public class NotificationService {
                 PriceResponse prices = coinbaseService.getAllPrices(symbol);
 
                 if (prices != null && prices.getSpotPrice() != null) {
+                    // Record price to DynamoDB and get change data
+                    PriceChangeData changeData = priceHistoryService.recordPriceWithChange(symbol, prices);
+
                     String formattedPrice = formatPrice(prices.getSpotPrice(), currencyFormat);
-                    message.append(String.format("%s: %s\n", symbol, formattedPrice));
+
+                    // Only show percentage changes after day 1 (when we have previous data)
+                    if (changeData.getDailyChangePercent() != null) {
+                        String dailyChange = formatDailyChange(changeData.getDailyChangePercent());
+                        String avgChange = formatAvgChange(changeData.getAvgChangePercent(), changeData.getDaysOfData());
+                        message.append(String.format("%s: %s %s %s\n", symbol, formattedPrice, dailyChange, avgChange));
+                    } else {
+                        // Day 1: just show price
+                        message.append(String.format("%s: %s\n", symbol, formattedPrice));
+                    }
                 } else {
                     message.append(String.format("%s: N/A\n", symbol));
                 }
@@ -110,9 +124,25 @@ public class NotificationService {
             }
         }
 
-        message.append("\n- CryptoTracker");
+        message.append("\n- SunCoin");
 
         return message.toString();
+    }
+
+    private String formatDailyChange(java.math.BigDecimal change) {
+        if (change == null) {
+            return "";
+        }
+        String arrow = change.compareTo(java.math.BigDecimal.ZERO) >= 0 ? "↑" : "↓";
+        return String.format("%s%.1f%%", arrow, Math.abs(change.doubleValue()));
+    }
+
+    private String formatAvgChange(java.math.BigDecimal avgChange, int days) {
+        if (avgChange == null || days == 0) {
+            return "";
+        }
+        String sign = avgChange.compareTo(java.math.BigDecimal.ZERO) >= 0 ? "+" : "";
+        return String.format("(%dd: %s%.1f%%)", days, sign, avgChange.doubleValue());
     }
 
     private String formatPrice(BigDecimal price, NumberFormat format) {

@@ -193,6 +193,7 @@ Resources:
           SPRING_PROFILES_ACTIVE: lambda
           JAVA_TOOL_OPTIONS: -XX:+TieredCompilation -XX:TieredStopAtLevel=1
           AWS_S3_SUBSCRIBERS_BUCKET: !Ref SubscribersBucket
+          AWS_DYNAMODB_TABLES_PRICE_HISTORY: !Ref PriceHistoryTable
           VONAGE_API_KEY: !Ref VonageApiKey
           VONAGE_API_SECRET: !Ref VonageApiSecret
           VONAGE_FROM_NUMBER: !Ref VonageFromNumber
@@ -220,6 +221,13 @@ Resources:
                 - lambda:InvokeFunction
               Resource:
                 - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AnalysisLambdaFunctionName}"
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:GetItem
+                - dynamodb:Query
+              Resource:
+                - !GetAtt PriceHistoryTable.Arn
 
   ApplicationResourceGroup:
     Type: AWS::ResourceGroups::Group
