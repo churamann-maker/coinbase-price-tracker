@@ -14,9 +14,9 @@ public class VonageConfig {
     @Value("${vonage.api.secret:}")
     private String apiSecret;
 
-    @Value("${vonage.from.number:CryptoTracker}")
+    @Value("${vonage.from.number:14157386102}")
     private String fromNumber;
 
-    @Value("${vonage.api.url:https://rest.nexmo.com/sms/json}")
+    @Value("${vonage.api.url:https://messages-sandbox.nexmo.com/v1/messages}")
     private String apiUrl;
 }

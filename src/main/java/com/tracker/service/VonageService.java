@@ -7,6 +7,8 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Map;
 
 @Service
@@ -18,32 +20,38 @@ public class VonageService {
     private final WebClient webClient;
 
     public boolean sendSms(String toPhoneNumber, String message) {
-        log.info("Sending SMS to: {}", maskPhoneNumber(toPhoneNumber));
+        log.info("Sending WhatsApp message to: {}", maskPhoneNumber(toPhoneNumber));
 
         try {
+            // Build Basic Auth header
+            String credentials = vonageConfig.getApiKey() + ":" + vonageConfig.getApiSecret();
+            String encodedCredentials = Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
+
+            // Build WhatsApp message request body
             Map<String, String> requestBody = Map.of(
-                    "api_key", vonageConfig.getApiKey(),
-                    "api_secret", vonageConfig.getApiSecret(),
                     "from", vonageConfig.getFromNumber(),
                     "to", toPhoneNumber.replace("+", ""),
+                    "message_type", "text",
                     "text", message,
-                    "type", "unicode"
+                    "channel", "whatsapp"
             );
 
             String response = webClient.post()
                     .uri(vonageConfig.getApiUrl())
+                    .header("Authorization", "Basic " + encodedCredentials)
+                    .header("Accept", "application/json")
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(requestBody)
                     .retrieve()
                     .bodyToMono(String.class)
                     .block();
 
-            log.info("SMS sent successfully to: {}", maskPhoneNumber(toPhoneNumber));
+            log.info("WhatsApp message sent successfully to: {}", maskPhoneNumber(toPhoneNumber));
             log.debug("Vonage response: {}", response);
 
             return true;
         } catch (Exception e) {
-            log.error("Failed to send SMS to {}: {}", maskPhoneNumber(toPhoneNumber), e.getMessage());
+            log.error("Failed to send WhatsApp message to {}: {}", maskPhoneNumber(toPhoneNumber), e.getMessage());
             return false;
         }
     }

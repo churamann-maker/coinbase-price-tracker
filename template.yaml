@@ -40,8 +40,8 @@ Parameters:
 
   VonageFromNumber:
     Type: String
-    Default: "CryptoTracker"
-    Description: Vonage sender ID or phone number
+    Default: "14157386102"
+    Description: Vonage WhatsApp sandbox number
 
   AnalysisLambdaFunctionName:
     Type: String
@@ -64,6 +64,44 @@ Resources:
           Value: coinbase-price-tracker
         - Key: Stage
           Value: !Ref Stage
+
+  # Cognito User Pool for authentication
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub ${AWS::StackName}-user-pool
+      UsernameAttributes:
+        - phone_number
+      MfaConfiguration: "OFF"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: false
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+      Schema:
+        - Name: phone_number
+          Required: true
+          Mutable: false
+        - Name: name
+          Required: false
+          Mutable: true
+      UserPoolTags:
+        Application: coinbase-price-tracker
+        Stage: !Ref Stage
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub ${AWS::StackName}-client
+      UserPoolId: !Ref CognitoUserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
   # DynamoDB Tables
   EnrollmentTable:
     Type: AWS::DynamoDB::Table
@@ -127,6 +165,8 @@ Resources:
           VONAGE_API_KEY: !Ref VonageApiKey
           VONAGE_API_SECRET: !Ref VonageApiSecret
           VONAGE_FROM_NUMBER: !Ref VonageFromNumber
+          COGNITO_USER_POOL_ID: !Ref CognitoUserPool
+          COGNITO_CLIENT_ID: !Ref CognitoUserPoolClient
       Events:
         ProxyApiRoot:
           Type: Api
@@ -168,6 +208,20 @@ Resources:
               Resource:
                 - !GetAtt SubscribersBucket.Arn
                 - !Sub "${SubscribersBucket.Arn}/*"
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminCreateUser
+                - cognito-idp:AdminInitiateAuth
+                - cognito-idp:AdminRespondToAuthChallenge
+                - cognito-idp:AdminSetUserPassword
+                - cognito-idp:AdminGetUser
+                - cognito-idp:AdminConfirmSignUp
+                - cognito-idp:SignUp
+                - cognito-idp:ConfirmSignUp
+                - cognito-idp:InitiateAuth
+                - cognito-idp:RespondToAuthChallenge
+              Resource:
+                - !GetAtt CognitoUserPool.Arn
 
   CoinbaseApi:
     Type: AWS::Serverless::Api
@@ -175,7 +229,7 @@ Resources:
       StageName: !Ref Stage
       Cors:
         AllowOrigin: "'*'"
-        AllowMethods: "'GET,POST,DELETE,OPTIONS'"
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
         AllowHeaders: "'Content-Type,Authorization'"
 
   # Notification Lambda - Scheduled daily to send price SMS
@@ -286,3 +340,11 @@ Outputs:
   NotificationFunctionName:
     Description: Notification Lambda Function Name
     Value: !Ref NotificationFunction
+
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+
+  CognitoUserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref CognitoUserPoolClient
