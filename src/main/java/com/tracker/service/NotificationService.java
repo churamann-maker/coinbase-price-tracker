@@ -21,7 +21,7 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class NotificationService {
 
-    private static final List<String> SYMBOLS = Arrays.asList(
+    private static final List<String> DEFAULT_COINS = Arrays.asList(
             "BTC", "ETH", "SOL", "ADA", "BNB", "XRP", "LINK", "ALGO"
     );
 
@@ -49,12 +49,12 @@ public class NotificationService {
         String sentimentEmoji = analysis.getEmoji();
         log.info("Market sentiment: {} {}", analysis.getSentiment(), sentimentEmoji);
 
-        String priceDigest = buildPriceDigest();
-
         int successCount = 0;
         int failCount = 0;
 
         for (Subscriber subscriber : subscribers) {
+            // Build personalized price digest for this subscriber's coins
+            String priceDigest = buildPriceDigestForSubscriber(subscriber);
             String personalizedMessage = buildPersonalizedMessage(subscriber, priceDigest, sentimentEmoji);
             boolean sent = vonageService.sendSms(subscriber.getPhoneNumber(), personalizedMessage);
             if (sent) {
@@ -91,12 +91,26 @@ public class NotificationService {
         return days + 1; // Day 1 is the first day of subscription
     }
 
-    private String buildPriceDigest() {
-        StringBuilder message = new StringBuilder();
+    private List<String> getSubscriberCoins(Subscriber subscriber) {
+        List<String> coins = subscriber.getSelectedCoins();
+        if (coins == null || coins.isEmpty()) {
+            return DEFAULT_COINS;
+        }
+        // Ensure BTC is always included
+        if (!coins.contains("BTC")) {
+            coins.add(0, "BTC");
+        }
+        return coins;
+    }
 
+    private String buildPriceDigestForSubscriber(Subscriber subscriber) {
+        StringBuilder message = new StringBuilder();
         NumberFormat currencyFormat = NumberFormat.getCurrencyInstance(Locale.US);
 
-        for (String symbol : SYMBOLS) {
+        List<String> coins = getSubscriberCoins(subscriber);
+        log.debug("Building price digest for {} with {} coins", subscriber.getPhoneNumber(), coins.size());
+
+        for (String symbol : coins) {
             try {
                 PriceResponse prices = coinbaseService.getAllPrices(symbol);
 

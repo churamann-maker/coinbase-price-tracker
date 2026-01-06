@@ -5,17 +5,16 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.Instant;
 import java.util.List;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Subscriber {
+public class AuthRequest {
     private String phoneNumber;
+    private String password;
     private String name;
-    private Instant subscribedAt;
-    private String cognitoUserId;
+    private String verificationCode;
     private List<String> selectedCoins;
 }

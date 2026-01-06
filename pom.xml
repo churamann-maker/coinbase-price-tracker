@@ -134,6 +134,12 @@
             <artifactId>lambda</artifactId>
         </dependency>
 
+        <!-- AWS Cognito Identity Provider for authentication -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>cognitoidentityprovider</artifactId>
+        </dependency>
+
         <!-- Twitter API Client -->
         <dependency>
             <groupId>io.github.redouane59.twitter</groupId>

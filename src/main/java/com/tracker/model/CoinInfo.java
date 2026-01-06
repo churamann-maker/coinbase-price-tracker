@@ -5,17 +5,12 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.Instant;
-import java.util.List;
-
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Subscriber {
-    private String phoneNumber;
+public class CoinInfo {
+    private String symbol;
     private String name;
-    private Instant subscribedAt;
-    private String cognitoUserId;
-    private List<String> selectedCoins;
+    private String displayName;
 }

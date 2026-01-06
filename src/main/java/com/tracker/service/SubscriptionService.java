@@ -79,6 +79,95 @@ public class SubscriptionService {
         return getSubscriberList().getSubscribers();
     }
 
+    public Subscriber getSubscriberByPhoneNumber(String phoneNumber) {
+        return getSubscriberList().getSubscribers().stream()
+                .filter(s -> s.getPhoneNumber().equals(phoneNumber))
+                .findFirst()
+                .orElse(null);
+    }
+
+    public Subscriber getSubscriberByCognitoId(String cognitoUserId) {
+        return getSubscriberList().getSubscribers().stream()
+                .filter(s -> cognitoUserId.equals(s.getCognitoUserId()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    public SubscriptionResponse subscribeWithCoins(String phoneNumber, String name,
+                                                    String cognitoUserId, List<String> selectedCoins) {
+        log.info("Subscribing phone number: {} for {} with {} coins",
+                maskPhoneNumber(phoneNumber), name, selectedCoins != null ? selectedCoins.size() : 0);
+
+        SubscriberList subscriberList = getSubscriberList();
+
+        // Check if already subscribed
+        Subscriber existingSubscriber = subscriberList.getSubscribers().stream()
+                .filter(s -> s.getPhoneNumber().equals(phoneNumber))
+                .findFirst()
+                .orElse(null);
+
+        if (existingSubscriber != null) {
+            // Update existing subscriber with new info
+            existingSubscriber.setCognitoUserId(cognitoUserId);
+            if (selectedCoins != null && !selectedCoins.isEmpty()) {
+                existingSubscriber.setSelectedCoins(selectedCoins);
+            }
+            if (name != null && !name.isEmpty()) {
+                existingSubscriber.setName(name);
+            }
+            saveSubscriberList(subscriberList);
+
+            log.info("Updated existing subscriber: {}", maskPhoneNumber(phoneNumber));
+            return SubscriptionResponse.builder()
+                    .phoneNumber(maskPhoneNumber(phoneNumber))
+                    .message("Subscription updated successfully")
+                    .subscribedAt(existingSubscriber.getSubscribedAt())
+                    .build();
+        }
+
+        // Add new subscriber
+        Subscriber newSubscriber = Subscriber.builder()
+                .phoneNumber(phoneNumber)
+                .name(name)
+                .subscribedAt(Instant.now())
+                .cognitoUserId(cognitoUserId)
+                .selectedCoins(selectedCoins)
+                .build();
+
+        subscriberList.getSubscribers().add(newSubscriber);
+        saveSubscriberList(subscriberList);
+
+        log.info("Successfully subscribed phone number: {} for {}", maskPhoneNumber(phoneNumber), name);
+
+        return SubscriptionResponse.builder()
+                .phoneNumber(maskPhoneNumber(phoneNumber))
+                .message("Successfully subscribed to crypto price notifications")
+                .subscribedAt(newSubscriber.getSubscribedAt())
+                .build();
+    }
+
+    public boolean updateSelectedCoins(String phoneNumber, List<String> selectedCoins) {
+        log.info("Updating selected coins for: {}", maskPhoneNumber(phoneNumber));
+
+        SubscriberList subscriberList = getSubscriberList();
+
+        Subscriber subscriber = subscriberList.getSubscribers().stream()
+                .filter(s -> s.getPhoneNumber().equals(phoneNumber))
+                .findFirst()
+                .orElse(null);
+
+        if (subscriber == null) {
+            log.warn("Subscriber not found: {}", maskPhoneNumber(phoneNumber));
+            return false;
+        }
+
+        subscriber.setSelectedCoins(selectedCoins);
+        saveSubscriberList(subscriberList);
+
+        log.info("Successfully updated coins for: {}", maskPhoneNumber(phoneNumber));
+        return true;
+    }
+
     private SubscriberList getSubscriberList() {
         try {
             GetObjectRequest getRequest = GetObjectRequest.builder()

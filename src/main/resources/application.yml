@@ -40,6 +40,11 @@ analysis:
   lambda:
     function-name: ${ANALYSIS_LAMBDA_FUNCTION_NAME:crypto-analysis-dev}
 
+# Cognito Authentication Configuration
+cognito:
+  user-pool-id: ${COGNITO_USER_POOL_ID:}
+  client-id: ${COGNITO_CLIENT_ID:}
+
 # Vonage SMS Configuration
 vonage:
   api:

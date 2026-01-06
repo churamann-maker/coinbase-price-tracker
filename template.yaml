@@ -43,6 +43,11 @@ Parameters:
     Default: "14157386102"
     Description: Vonage WhatsApp sandbox number
 
+  VonageApiUrl:
+    Type: String
+    Default: "https://messages-sandbox.nexmo.com/v1/messages"
+    Description: Vonage Messages API URL for WhatsApp
+
   AnalysisLambdaFunctionName:
     Type: String
     Default: "crypto-analysis-dev"
@@ -251,6 +256,7 @@ Resources:
           VONAGE_API_KEY: !Ref VonageApiKey
           VONAGE_API_SECRET: !Ref VonageApiSecret
           VONAGE_FROM_NUMBER: !Ref VonageFromNumber
+          VONAGE_API_URL: !Ref VonageApiUrl
           ANALYSIS_LAMBDA_FUNCTION_NAME: !Ref AnalysisLambdaFunctionName
       Events:
         DailySchedule:
